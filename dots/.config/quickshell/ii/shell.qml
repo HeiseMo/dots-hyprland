@@ -74,4 +74,11 @@ ShellRoot {
 
         onPressed: root.cyclePanelFamily()
     }
+
+    GlobalShortcut {
+        name: "desktopPetToggle"
+        description: "Toggles desktop companion on press"
+
+        onPressed: DesktopPet.toggleEnabled()
+    }
 }

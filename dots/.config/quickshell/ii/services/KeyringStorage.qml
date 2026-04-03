@@ -15,8 +15,6 @@ import QtQuick;
 Singleton {
     id: root
 
-    signal dataChanged()
-
     property bool loaded: false
     property var keyringData: ({})
     
@@ -84,7 +82,6 @@ Singleton {
             if (saveData.running) {
                 // console.log("[KeyringStorage] Saving with command: '" + saveData.command.join("' '") + "'");
                 saveData.write(JSON.stringify(root.keyringData));
-                root.dataChanged()
                 stdinEnabled = false // End input stream
             }
         }

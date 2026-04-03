@@ -24,6 +24,15 @@ This branch adds a Quickshell-integrated agent HUD to the `ii` shell.
   - `orbitbar.sock`
 - live agent terminals are routed to `special:agents`
 - sensitive approval flows stay in the terminal; Orbitbar is the decision/jump surface
+- approval-first mode is the current target UX:
+  - `Needs input` sessions sort first
+  - `Working` sessions stay visible but secondary
+  - `Idle` / `Done` sessions are still available without dominating the popup
+- normalized session state now includes:
+  - `ui_state`
+  - `summary`
+  - `primary_action`
+  - `urgency_rank`
 
 ## Reloading and testing
 - reload the shell with your normal Quickshell flow

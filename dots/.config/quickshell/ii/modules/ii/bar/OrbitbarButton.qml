@@ -3,35 +3,62 @@ import qs.modules.common
 import qs.modules.common.widgets
 import QtQuick
 import QtQuick.Layouts
-import Quickshell.Io
 
 MouseArea {
     id: root
 
     property bool expanded: false
-    property var popupState: ({ "updated_at": "", "session_count": 0, "sessions": [] })
-    property var popupSessions: popupState.sessions ?? []
-    property int popupSessionCount: popupState.session_count ?? 0
+    property var popupSessions: Orbitbar.sessions ?? []
+    property int popupSessionCount: Orbitbar.sessionCount ?? 0
     property string selectedSessionId: popupSessions.length > 0 ? (popupSessions[0].session_id ?? "") : ""
-    readonly property var focusedSession: popupSessionCount > 0 ? popupSessions[0] : null
+    readonly property bool approvalFirst: Config.options?.bar?.orbitbar?.approvalFirst ?? true
+    readonly property var focusedSession: Orbitbar.focusedSession
+    readonly property var headlineSession: Orbitbar.headlineSession
+    readonly property int pendingCount: Orbitbar.pendingCount ?? 0
+    readonly property int workingCount: Orbitbar.workingCount ?? 0
+    readonly property int errorCount: Orbitbar.errorCount ?? 0
+    readonly property int doneCount: Orbitbar.doneCount ?? 0
     readonly property string displayTitle: {
-        if (!focusedSession)
+        if (!root.approvalFirst) {
+            if (!focusedSession)
+                return "Orbitbar";
+            return focusedSession.title ?? focusedSession.session_id ?? focusedSession.tool ?? "Orbitbar";
+        }
+
+        if (root.pendingCount > 0)
+            return root.pendingCount === 1 ? "1 needs input" : `${root.pendingCount} need input`;
+        if (root.errorCount > 0)
+            return root.errorCount === 1 ? "1 error" : `${root.errorCount} errors`;
+        if (root.workingCount > 0)
+            return root.workingCount === 1 ? "1 working" : `${root.workingCount} working`;
+        if (root.doneCount > 0)
+            return root.doneCount === 1 ? "1 done" : `${root.doneCount} done`;
+        if (!headlineSession)
             return "Orbitbar";
-        return focusedSession.title ?? focusedSession.session_id ?? focusedSession.tool ?? "Orbitbar";
+        return headlineSession.title ?? headlineSession.session_id ?? headlineSession.tool ?? "Orbitbar";
+    }
+    readonly property string detailTitle: {
+        if (!root.approvalFirst)
+            return "";
+
+        const summary = headlineSession?.summary ?? headlineSession?.detail ?? "";
+        if (summary && root.popupSessionCount > 0)
+            return `${headlineSession?.title ?? ""}`.trim().length > 0 ? `${headlineSession.title}` : summary;
+        return "";
     }
     readonly property bool urgent: {
-        const status = focusedSession?.status ?? "idle";
-        return status === "approval_required" || status === "question" || status === "error";
+        const state = headlineSession?.ui_state ?? "idle";
+        return state === "needs_input" || state === "error";
     }
     readonly property color activeColor: {
-        const status = focusedSession?.status ?? "idle";
-        switch (status) {
-        case "approval_required":
+        const state = headlineSession?.ui_state ?? "idle";
+        switch (state) {
+        case "needs_input":
             return Appearance.colors.colSecondaryContainer;
-        case "question":
-            return Appearance.colors.colPrimary;
         case "error":
             return Appearance.colors.colError;
+        case "working":
+            return Appearance.colors.colPrimary;
         case "done":
             return Appearance.colors.colPrimaryContainer;
         default:
@@ -49,39 +76,14 @@ MouseArea {
             root.expanded = !root.expanded;
     }
 
-    Component.onCompleted: popupStateFile.reload()
-
-    function parsePopupState(raw) {
-        if (!raw || raw.trim().length === 0) {
-            root.popupState = { "updated_at": "", "session_count": 0, "sessions": [] };
-            return;
-        }
-
-        try {
-            root.popupState = JSON.parse(raw);
-        } catch (error) {
-            console.warn(`[OrbitbarButton] Failed to parse state file: ${error}`);
-        }
-    }
-
     onPopupSessionsChanged: {
         if (popupSessions.length === 0) {
             root.selectedSessionId = "";
-            if (root.expanded)
-                root.expanded = false;
             return;
         }
         const stillExists = popupSessions.some(session => session.session_id === root.selectedSessionId);
         if (!stillExists)
             root.selectedSessionId = popupSessions[0].session_id ?? "";
-    }
-
-    FileView {
-        id: popupStateFile
-        path: Qt.resolvedUrl(Directories.orbitbarStatePath)
-        watchChanges: true
-        blockLoading: true
-        onLoaded: root.parsePopupState(popupStateFile.text())
     }
 
     Rectangle {
@@ -108,29 +110,44 @@ MouseArea {
                 width: 14
                 height: 14
                 radius: 7
-                color: focusedSession ? Qt.rgba(root.activeColor.r, root.activeColor.g, root.activeColor.b, 0.18) : Appearance.colors.colSurfaceContainerHigh
+                color: headlineSession ? Qt.rgba(root.activeColor.r, root.activeColor.g, root.activeColor.b, 0.18) : Appearance.colors.colSurfaceContainerHigh
 
                 Rectangle {
                     anchors.centerIn: parent
                     width: 6
                     height: 6
                     radius: 3
-                    color: focusedSession ? root.activeColor : Appearance.colors.colOutlineVariant
+                    color: headlineSession ? root.activeColor : Appearance.colors.colOutlineVariant
+                }
+            }
+
+            ColumnLayout {
+                spacing: 0
+                Layout.maximumWidth: root.approvalFirst ? 220 : 180
+
+                StyledText {
+                    text: root.displayTitle
+                    color: Appearance.colors.colOnLayer1
+                    font.pixelSize: Appearance.font.pixelSize.small
+                    elide: Text.ElideRight
+                    maximumLineCount: 1
+                    Layout.fillWidth: true
+                }
+
+                StyledText {
+                    visible: root.approvalFirst && text.length > 0
+                    text: root.detailTitle
+                    color: Appearance.colors.colSubtext
+                    font.pixelSize: Appearance.font.pixelSize.smallest
+                    elide: Text.ElideRight
+                    maximumLineCount: 1
+                    Layout.fillWidth: true
                 }
             }
 
             StyledText {
-                text: root.displayTitle
-                color: Appearance.colors.colOnLayer1
-                font.pixelSize: Appearance.font.pixelSize.small
-                elide: Text.ElideRight
-                maximumLineCount: 1
-                Layout.maximumWidth: 180
-            }
-
-            StyledText {
-                text: root.popupSessionCount > 0 ? `${root.popupSessionCount}` : ""
-                visible: root.popupSessionCount > 0
+                text: root.popupSessionCount > 1 ? `${root.popupSessionCount}` : ""
+                visible: root.popupSessionCount > 1
                 color: root.urgent ? Appearance.colors.colOnSecondaryContainer : Appearance.colors.colSubtext
                 font.pixelSize: Appearance.font.pixelSize.smallest
                 font.weight: root.urgent ? Font.Medium : Font.Normal

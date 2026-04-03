@@ -19,6 +19,20 @@ ContentPage {
             }
         }
     }
+
+    ContentSection {
+        icon: "smart_toy"
+        title: Translation.tr("Orbitbar")
+
+        ConfigSwitch {
+            buttonIcon: "rule_settings"
+            text: Translation.tr("Approval-first triage")
+            checked: Config.options.bar.orbitbar.approvalFirst
+            onCheckedChanged: {
+                Config.options.bar.orbitbar.approvalFirst = checked;
+            }
+        }
+    }
     
     ContentSection {
         icon: "spoke"

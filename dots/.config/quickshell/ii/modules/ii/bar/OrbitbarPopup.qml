@@ -19,10 +19,29 @@ LazyLoader {
     property string viewMode: "list"
     property string choiceScriptPath: `${Directories.scriptPath}/orbitbar/send_choice.py`
     property string focusScriptPath: `${Directories.scriptPath}/orbitbar/focus_terminal.py`
+    property string statePath: Directories.orbitbarStatePath
+    property bool approvalFirst: Config.options?.bar?.orbitbar?.approvalFirst ?? true
 
     readonly property real horizontalPadding: 14
     readonly property real verticalPadding: 14
-    readonly property real panelWidth: viewMode === "list" ? 404 : 548
+    readonly property real panelWidth: viewMode === "list" ? 432 : 560
+    readonly property var needsInputSessions: sessions.filter(session => (session?.ui_state ?? "idle") === "needs_input")
+    readonly property var errorSessions: sessions.filter(session => (session?.ui_state ?? "idle") === "error")
+    readonly property var workingSessions: sessions.filter(session => (session?.ui_state ?? "idle") === "working")
+    readonly property var doneSessions: sessions.filter(session => (session?.ui_state ?? "idle") === "done")
+    readonly property var idleSessions: sessions.filter(session => (session?.ui_state ?? "idle") === "idle")
+    readonly property string overviewText: {
+        const parts = [];
+        if (needsInputSessions.length > 0)
+            parts.push(needsInputSessions.length === 1 ? "1 needs input" : `${needsInputSessions.length} need input`);
+        if (workingSessions.length > 0)
+            parts.push(workingSessions.length === 1 ? "1 working" : `${workingSessions.length} working`);
+        if (errorSessions.length > 0)
+            parts.push(errorSessions.length === 1 ? "1 error" : `${errorSessions.length} errors`);
+        if (parts.length === 0)
+            return "Watching live agent terminals";
+        return parts.join(" · ");
+    }
 
     readonly property var selectedSession: {
         if (sessions.length === 0)
@@ -30,11 +49,14 @@ LazyLoader {
         const matched = sessions.find(session => session.session_id === selectedSessionId);
         return matched ?? sessions[0];
     }
+    readonly property var selectedPendingAction: selectedSession?.pending_action ?? null
+    readonly property var selectedChoiceList: selectedPendingAction?.choices ?? selectedSession?.options ?? []
     readonly property bool selectedHasActions: (selectedSession?.actions ?? []).length > 0
-    readonly property bool selectedHasOptions: (selectedSession?.options ?? []).length > 0
-    readonly property bool selectedHasPreview: (selectedSession?.preview ?? "").length > 0
+    readonly property bool selectedHasChoices: selectedChoiceList.length > 0
+    readonly property bool selectedHasPreview: ((selectedPendingAction?.preview ?? "") || (selectedSession?.preview ?? "")).length > 0
     readonly property bool selectedHasRecent: (selectedSession?.recent ?? []).length > 0
-    readonly property bool selectedNeedsInput: selectedHasActions || selectedHasOptions || (selectedSession?.requires_action ?? false)
+    readonly property bool selectedHasChangeSummary: (selectedPendingAction?.change_summary?.file_count ?? 0) > 0
+    readonly property bool selectedNeedsInput: !!selectedPendingAction || selectedHasChoices || (selectedSession?.requires_action ?? false)
 
     active: hoverTarget && (hoverTarget.containsMouse || forcedOpen)
 
@@ -61,16 +83,27 @@ LazyLoader {
     function submitChoice(option) {
         if (!selectedSession?.pid || !option?.id)
             return;
+
+        const responseMode = option?.response_mode ?? selectedPendingAction?.response_mode ?? "direct_tty";
+        if (responseMode === "focus_terminal") {
+            focusTerminal();
+            return;
+        }
+
         Quickshell.execDetached([
             "python",
             choiceScriptPath,
             "--pid",
             `${selectedSession.pid}`,
+            "--session-id",
+            `${selectedSession.session_id ?? ""}`,
+            "--state-path",
+            `${statePath}`,
             "--choice-id",
             `${option.id}`,
         ]);
 
-        if ((option.id === "allow_once" || option.id === "allow_session") && (selectedSession?.sensitive_input_required ?? false)) {
+        if (selectedSession?.sensitive_input_required ?? false) {
             focusTerminal();
             return;
         }
@@ -102,8 +135,36 @@ LazyLoader {
             focusTerminal();
     }
 
+    function pendingActionLabel(action) {
+        const kind = action?.kind ?? "";
+        switch (kind) {
+        case "change_review":
+            return "Change review";
+        case "question":
+            return "Input needed";
+        default:
+            return "Approval required";
+        }
+    }
+
+    function uiStateLabel(uiState) {
+        switch (uiState) {
+        case "needs_input":
+            return "Needs input";
+        case "working":
+            return "Working";
+        case "done":
+            return "Done";
+        case "error":
+            return "Error";
+        default:
+            return "Idle";
+        }
+    }
+
     function statusColorFor(status) {
         switch (status) {
+        case "needs_input":
         case "approval_required":
             return Appearance.colors.colSecondary;
         case "question":
@@ -142,12 +203,17 @@ LazyLoader {
         spacing: 6
 
         ThreadBadge {
-            visible: !!parent.thread?.tool
-            label: `${parent.thread?.tool ?? ""}`
+            visible: !!parent.thread?.provider || !!parent.thread?.tool
+            label: `${parent.thread?.provider ?? parent.thread?.tool ?? ""}`
         }
 
         ThreadBadge {
-            visible: !!parent.thread?.terminal_app
+            visible: !!parent.thread?.project
+            label: `${parent.thread?.project ?? ""}`
+        }
+
+        ThreadBadge {
+            visible: !parent.thread?.project && !!parent.thread?.terminal_app
             label: `${parent.thread?.terminal_app ?? ""}`
         }
 
@@ -179,12 +245,113 @@ LazyLoader {
         }
     }
 
+    component SectionHeader: Row {
+        required property string title
+        required property int count
+
+        spacing: 8
+
+        StyledText {
+            text: parent.title
+            color: "#ffffff"
+            font.pixelSize: Appearance.font.pixelSize.small
+            font.weight: Font.Medium
+        }
+
+        StyledText {
+            text: `${parent.count}`
+            color: Appearance.colors.colSubtext
+            font.pixelSize: Appearance.font.pixelSize.smallest
+        }
+    }
+
+    component SessionCard: RippleButton {
+        required property var thread
+
+        readonly property color stateColor: root.statusColorFor(thread?.ui_state ?? thread?.status ?? "idle")
+        readonly property string stateLabel: root.uiStateLabel(thread?.ui_state ?? "idle")
+        readonly property string summaryText: `${thread?.summary ?? thread?.detail ?? ""}`
+        readonly property var primaryAction: thread?.primary_action ?? null
+
+        implicitWidth: parent.width
+        implicitHeight: cardBody.childrenRect.height + 20
+        buttonRadius: 14
+        colBackground: Qt.rgba(Appearance.colors.colLayer1.r, Appearance.colors.colLayer1.g, Appearance.colors.colLayer1.b, 0.72)
+        colBackgroundHover: Appearance.colors.colSurfaceContainerHighest
+        colBackgroundToggled: colBackground
+        colBackgroundToggledHover: colBackgroundHover
+        colRipple: Appearance.colors.colSurfaceContainerHighestActive
+        colRippleToggled: colRipple
+        releaseAction: () => root.openThread(thread?.session_id ?? "")
+
+        contentItem: Column {
+            id: cardBody
+            anchors.fill: parent
+            anchors.margins: 10
+            spacing: 8
+
+            Row {
+                width: parent.width
+                spacing: 8
+
+                Rectangle {
+                    y: 5
+                    width: 8
+                    height: 8
+                    radius: 4
+                    color: stateColor
+                }
+
+                StyledText {
+                    width: metaRow.visible ? parent.width - metaRow.width - 18 : parent.width - 18
+                    text: `${thread?.title ?? thread?.session_id ?? "untitled"}`
+                    color: "#ffffff"
+                    font.pixelSize: Appearance.font.pixelSize.small
+                    font.weight: Font.Medium
+                    elide: Text.ElideRight
+                    maximumLineCount: 1
+                }
+
+                SessionMetaRow {
+                    id: metaRow
+                    visible: implicitWidth > 0
+                    thread: thread
+                }
+            }
+
+            StyledText {
+                width: parent.width
+                text: summaryText
+                color: "#d3d6de"
+                font.pixelSize: Appearance.font.pixelSize.smallest
+                wrapMode: Text.Wrap
+                maximumLineCount: 2
+                elide: Text.ElideRight
+            }
+
+            Row {
+                spacing: 8
+
+                ActionPill {
+                    label: stateLabel
+                    emphasized: thread?.ui_state === "needs_input"
+                }
+
+                ActionPill {
+                    visible: !!primaryAction?.label
+                    label: `${primaryAction?.label ?? ""}`
+                    emphasized: true
+                }
+            }
+        }
+    }
+
     component DetailCard: Rectangle {
         width: root.panelWidth - root.horizontalPadding * 2
         radius: 16
         color: Appearance.colors.colSurfaceContainer
         border.width: 1
-        border.color: Qt.rgba(root.statusColorFor(root.selectedSession?.status ?? "idle").r, root.statusColorFor(root.selectedSession?.status ?? "idle").g, root.statusColorFor(root.selectedSession?.status ?? "idle").b, 0.3)
+        border.color: Qt.rgba(root.statusColorFor(root.selectedSession?.ui_state ?? root.selectedSession?.status ?? "idle").r, root.statusColorFor(root.selectedSession?.ui_state ?? root.selectedSession?.status ?? "idle").g, root.statusColorFor(root.selectedSession?.ui_state ?? root.selectedSession?.status ?? "idle").b, 0.3)
         implicitHeight: detailBody.childrenRect.height + 24
 
         Column {
@@ -209,11 +376,50 @@ LazyLoader {
 
             StyledText {
                 width: parent.width
-                text: root.selectedSession?.detail ?? "No details"
+                text: root.selectedSession?.summary ?? root.selectedSession?.detail ?? "No details"
                 color: "#ffffff"
                 opacity: 0.92
                 font.pixelSize: Appearance.font.pixelSize.small
                 wrapMode: Text.Wrap
+            }
+
+            ThreadBadge {
+                visible: !!root.selectedPendingAction
+                label: root.pendingActionLabel(root.selectedPendingAction)
+            }
+
+            Rectangle {
+                visible: root.selectedHasChangeSummary
+                width: parent.width
+                radius: 12
+                color: Appearance.colors.colLayer1
+                border.width: 1
+                border.color: Appearance.colors.colOutlineVariant
+                implicitHeight: changeSummaryBody.childrenRect.height + 16
+
+                Column {
+                    id: changeSummaryBody
+                    x: 8
+                    y: 8
+                    width: parent.width - 16
+                    spacing: 4
+
+                    StyledText {
+                        text: `${root.selectedPendingAction?.change_summary?.file_count ?? 0} file${(root.selectedPendingAction?.change_summary?.file_count ?? 0) === 1 ? "" : "s"} in this change`
+                        color: "#ffffff"
+                        font.pixelSize: Appearance.font.pixelSize.smallest
+                    }
+
+                    StyledText {
+                        visible: (root.selectedPendingAction?.change_summary?.files ?? []).length > 0
+                        width: parent.width
+                        text: `${(root.selectedPendingAction?.change_summary?.files ?? []).join("\n")}`
+                        color: "#ffffff"
+                        opacity: 0.82
+                        font.pixelSize: Appearance.font.pixelSize.smallest
+                        wrapMode: Text.Wrap
+                    }
+                }
             }
 
             Rectangle {
@@ -230,7 +436,7 @@ LazyLoader {
                     x: 9
                     y: 9
                     width: parent.width - 18
-                    text: root.selectedSession?.preview ?? ""
+                    text: root.selectedPendingAction?.preview ?? root.selectedSession?.preview ?? ""
                     color: "#ffffff"
                     font.pixelSize: Appearance.font.pixelSize.smallest
                     wrapMode: Text.Wrap
@@ -238,12 +444,12 @@ LazyLoader {
             }
 
             Column {
-                visible: root.selectedHasOptions
+                visible: root.selectedHasChoices
                 width: parent.width
                 spacing: 8
 
                 Repeater {
-                    model: root.selectedSession?.options ?? []
+                    model: root.selectedChoiceList
 
                     delegate: RippleButton {
                         readonly property var option: modelData
@@ -382,7 +588,7 @@ LazyLoader {
                         width: 4
                         height: 4
                         radius: 2
-                        color: root.statusColorFor(root.selectedSession?.status ?? "idle")
+                        color: root.statusColorFor(root.selectedSession?.ui_state ?? root.selectedSession?.status ?? "idle")
                     }
 
                     StyledText {
@@ -452,112 +658,138 @@ LazyLoader {
                     Column {
                         id: listColumn
                         width: parent.width
-                        spacing: 8
+                        spacing: 10
 
                         StyledText {
-                            text: root.sessionCount === 1 ? "1 thread" : `${root.sessionCount} threads`
+                            text: "Orbitbar"
                             color: Appearance.colors.colOnSurface
                             font.pixelSize: Appearance.font.pixelSize.large
+                            font.weight: Font.DemiBold
                         }
 
-                        Repeater {
-                            model: root.sessions
+                        StyledText {
+                            width: parent.width
+                            text: root.overviewText
+                            color: Appearance.colors.colSubtext
+                            font.pixelSize: Appearance.font.pixelSize.smallest
+                            wrapMode: Text.Wrap
+                        }
 
-                            delegate: RippleButton {
-                                required property var modelData
-                                readonly property bool primary: (modelData?.session_id ?? "") === (root.sessions[0]?.session_id ?? "")
-                                readonly property color statusColor: root.statusColorFor(modelData?.status ?? "idle")
-                                readonly property real textRightEdge: metaRow.visible ? metaRow.x - 10 : parent.width - 14
-                                readonly property string summaryText: `${modelData?.detail ?? modelData?.preview ?? ""}`
-                                readonly property string actionText: modelData?.requires_action ? "Action needed" : "No action needed"
+                        Column {
+                            visible: root.approvalFirst && root.needsInputSessions.length > 0
+                            width: parent.width
+                            spacing: 8
 
-                                implicitWidth: parent.width
-                                implicitHeight: primary ? 88 : 40
-                                buttonRadius: primary ? 14 : 12
-                                colBackground: primary ? Qt.rgba(Appearance.colors.colLayer1.r, Appearance.colors.colLayer1.g, Appearance.colors.colLayer1.b, 0.78) : Qt.rgba(Appearance.colors.colLayer1.r, Appearance.colors.colLayer1.g, Appearance.colors.colLayer1.b, 0.52)
-                                colBackgroundHover: primary ? Appearance.colors.colSurfaceContainerHighestHover : Appearance.colors.colSurfaceContainerHighest
-                                colBackgroundToggled: colBackground
-                                colBackgroundToggledHover: colBackgroundHover
-                                colRipple: primary ? Appearance.colors.colSurfaceContainerHighestActive : Appearance.colors.colLayer1Active
-                                colRippleToggled: colRipple
-                                releaseAction: () => root.openThread(modelData.session_id ?? "")
+                            SectionHeader {
+                                title: "Needs input"
+                                count: root.needsInputSessions.length
+                            }
 
-                                contentItem: Item {
-                                    anchors.fill: parent
+                            Repeater {
+                                model: root.needsInputSessions
+                                delegate: SessionCard {
+                                    thread: modelData
+                                }
+                            }
+                        }
 
-                                    Rectangle {
-                                        x: 12
-                                        y: primary ? 15 : 16
-                                        width: primary ? 8 : 7
-                                        height: primary ? 8 : 7
-                                        radius: width / 2
-                                        color: parent.parent.statusColor
-                                    }
+                        Column {
+                            visible: root.approvalFirst && root.errorSessions.length > 0
+                            width: parent.width
+                            spacing: 8
 
-                                    SessionMetaRow {
-                                        id: metaRow
-                                        x: parent.width - implicitWidth - 12
-                                        y: primary ? 10 : 10
-                                        visible: true
-                                        thread: modelData
-                                    }
+                            SectionHeader {
+                                title: "Errors"
+                                count: root.errorSessions.length
+                            }
 
-                                    Text {
-                                        x: 30
-                                        y: primary ? 8 : 8
-                                        width: Math.max(80, parent.parent.textRightEdge - 30)
-                                        text: `${modelData?.title ?? modelData?.session_id ?? "untitled"}`
-                                        color: "#ffffff"
-                                        font.pixelSize: primary ? 17 : 14
-                                        font.weight: primary ? Font.DemiBold : Font.Medium
-                                        elide: Text.ElideRight
-                                        maximumLineCount: 1
-                                        renderType: Text.NativeRendering
-                                    }
+                            Repeater {
+                                model: root.errorSessions
+                                delegate: SessionCard {
+                                    thread: modelData
+                                }
+                            }
+                        }
 
-                                    Text {
-                                        visible: primary
-                                        x: 30
-                                        y: 33
-                                        width: Math.max(80, parent.parent.textRightEdge - 30)
-                                        text: parent.parent.summaryText
-                                        color: "#a9adb5"
-                                        font.pixelSize: 12
-                                        elide: Text.ElideRight
-                                        maximumLineCount: 1
-                                        renderType: Text.NativeRendering
-                                    }
+                        Column {
+                            visible: root.approvalFirst && root.workingSessions.length > 0
+                            width: parent.width
+                            spacing: 8
 
-                                    Text {
-                                        visible: primary
-                                        x: 30
-                                        y: 56
-                                        width: Math.max(80, parent.parent.textRightEdge - 30)
-                                        text: parent.parent.actionText
-                                        color: modelData?.requires_action ? "#55a8ff" : "#52d88a"
-                                        font.pixelSize: 12
-                                        elide: Text.ElideRight
-                                        maximumLineCount: 1
-                                        renderType: Text.NativeRendering
-                                    }
+                            SectionHeader {
+                                title: "Working"
+                                count: root.workingSessions.length
+                            }
+
+                            Repeater {
+                                model: root.workingSessions
+                                delegate: SessionCard {
+                                    thread: modelData
+                                }
+                            }
+                        }
+
+                        Column {
+                            visible: root.approvalFirst && (root.idleSessions.length + root.doneSessions.length) > 0
+                            width: parent.width
+                            spacing: 8
+
+                            SectionHeader {
+                                title: "Idle and done"
+                                count: root.idleSessions.length + root.doneSessions.length
+                            }
+
+                            Repeater {
+                                model: root.idleSessions.concat(root.doneSessions)
+                                delegate: SessionCard {
+                                    thread: modelData
+                                }
+                            }
+                        }
+
+                        Column {
+                            visible: !root.approvalFirst && root.sessions.length > 0
+                            width: parent.width
+                            spacing: 8
+
+                            Repeater {
+                                model: root.sessions
+                                delegate: SessionCard {
+                                    thread: modelData
                                 }
                             }
                         }
 
                         Rectangle {
                             visible: root.sessions.length === 0
-                            radius: 14
+                            radius: 16
                             color: Appearance.colors.colSurfaceContainer
                             border.width: 1
                             border.color: Appearance.colors.colOutlineVariant
                             width: parent.width
-                            height: 56
+                            implicitHeight: emptyStateBody.childrenRect.height + 24
 
-                            StyledText {
-                                anchors.centerIn: parent
-                                text: "No active threads"
-                                color: Appearance.colors.colSubtext
-                                font.pixelSize: Appearance.font.pixelSize.small
+                            Column {
+                                id: emptyStateBody
+                                x: 12
+                                y: 12
+                                width: parent.width - 24
+                                spacing: 6
+
+                                StyledText {
+                                    text: "No live agent terminals"
+                                    color: "#ffffff"
+                                    font.pixelSize: Appearance.font.pixelSize.small
+                                    font.weight: Font.Medium
+                                }
+
+                                StyledText {
+                                    width: parent.width
+                                    text: "Orbitbar appears when Codex, Gemini, or Claude sessions are active and gives you a fast jump point for approvals and follow-up."
+                                    color: Appearance.colors.colSubtext
+                                    font.pixelSize: Appearance.font.pixelSize.smallest
+                                    wrapMode: Text.Wrap
+                                }
                             }
                         }
                     }

@@ -16,8 +16,10 @@ Item {
     property bool translatorEnabled: Config.options.sidebar.translator.enable
     property bool animeEnabled: Config.options.policies.weeb !== 0
     property bool animeCloset: Config.options.policies.weeb === 2
+    readonly property int financeTabIndex: root.aiChatEnabled ? 1 : 0
     property var tabButtonList: [
         ...(root.aiChatEnabled ? [{"icon": "neurology", "name": Translation.tr("Intelligence")}] : []),
+        {"icon": "finance", "name": Translation.tr("Finance")},
         ...(root.translatorEnabled ? [{"icon": "translate", "name": Translation.tr("Translator")}] : []),
         ...((root.animeEnabled && !root.animeCloset) ? [{"icon": "bookmark_heart", "name": Translation.tr("Anime")}] : [])
     ]
@@ -85,6 +87,7 @@ Item {
 
                 contentChildren: [
                     ...(root.aiChatEnabled ? [aiChat.createObject()] : []),
+                    finance.createObject(),
                     ...(root.translatorEnabled ? [translator.createObject()] : []),
                     ...((root.tabButtonList.length === 0 || (!root.aiChatEnabled && !root.translatorEnabled && root.animeCloset)) ? [placeholder.createObject()] : []),
                     ...(root.animeEnabled ? [anime.createObject()] : []),
@@ -95,6 +98,12 @@ Item {
         Component {
             id: aiChat
             AiChat {}
+        }
+        Component {
+            id: finance
+            Finance {
+                isActive: swipeView.currentIndex === root.financeTabIndex
+            }
         }
         Component {
             id: translator

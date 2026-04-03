@@ -21,6 +21,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--preview")
     parser.add_argument("--actions-json")
     parser.add_argument("--options-json")
+    parser.add_argument("--pending-action-json")
+    parser.add_argument("--requires-action", action="store_true")
     return parser.parse_args()
 
 
@@ -40,8 +42,10 @@ def main() -> None:
         "workspace": args.workspace,
         "recent": args.recent or None,
         "preview": args.preview,
+        "requires_action": args.requires_action or None,
         "actions": json.loads(args.actions_json) if args.actions_json else None,
         "options": json.loads(args.options_json) if args.options_json else None,
+        "pending_action": json.loads(args.pending_action_json) if args.pending_action_json else None,
     }
     payload.update({key: value for key, value in optional.items() if value is not None})
 
