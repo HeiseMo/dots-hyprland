@@ -16,6 +16,8 @@ Item { // Bar content region
     property var brightnessMonitor: Brightness.getMonitorForScreen(screen)
     property real useShortenedForm: (Appearance.sizes.barHellaShortenScreenWidthThreshold >= screen?.width) ? 2 : (Appearance.sizes.barShortenScreenWidthThreshold >= screen?.width) ? 1 : 0
     readonly property int centerSideModuleWidth: (useShortenedForm == 2) ? Appearance.sizes.barCenterSideModuleWidthHellaShortened : (useShortenedForm == 1) ? Appearance.sizes.barCenterSideModuleWidthShortened : Appearance.sizes.barCenterSideModuleWidth
+    readonly property real centerDeckPadding: root.useShortenedForm === 2 ? 6 : 8
+    readonly property real centerDeckSpacing: root.useShortenedForm === 2 ? 4 : 6
 
     component VerticalBarSeparator: Rectangle {
         Layout.topMargin: Appearance.sizes.baseBarHeight / 3
@@ -54,7 +56,7 @@ Item { // Bar content region
             top: parent.top
             bottom: parent.bottom
             left: parent.left
-            right: middleSection.left
+            right: middleSectionWrapper.left
         }
         implicitWidth: leftSectionRowLayout.implicitWidth
         implicitHeight: Appearance.sizes.baseBarHeight
@@ -99,98 +101,115 @@ Item { // Bar content region
         }
     }
 
-    Row { // Middle section
-        id: middleSection
+    Item { // Middle section
+        id: middleSectionWrapper
         anchors {
             top: parent.top
             bottom: parent.bottom
             horizontalCenter: parent.horizontalCenter
         }
-        spacing: 4
+        implicitWidth: middleSection.implicitWidth + root.centerDeckPadding * 2
+        implicitHeight: middleSection.implicitHeight + root.centerDeckPadding * 2
 
-        BarGroup {
-            id: leftCenterGroup
-            anchors.verticalCenter: parent.verticalCenter
-            implicitWidth: root.centerSideModuleWidth
-
-            Resources {
-                alwaysShowAllResources: root.useShortenedForm === 2
-                Layout.fillWidth: root.useShortenedForm === 2
-            }
-
-            Media {
-                visible: root.useShortenedForm < 2
-                Layout.fillWidth: true
-            }
+        Rectangle {
+            anchors.fill: parent
+            radius: Appearance.rounding.large
+            color: Config.options?.bar.borderless ? Qt.rgba(Appearance.colors.colLayer1.r, Appearance.colors.colLayer1.g, Appearance.colors.colLayer1.b, 0.52) : Appearance.colors.colSurfaceContainerLow
+            border.width: 1
+            border.color: Qt.rgba(Appearance.colors.colOutlineVariant.r, Appearance.colors.colOutlineVariant.g, Appearance.colors.colOutlineVariant.b, 0.42)
         }
 
-        VerticalBarSeparator {
-            visible: Config.options?.bar.borderless
-        }
+        Row {
+            id: middleSection
+            anchors.centerIn: parent
+            spacing: root.centerDeckSpacing
 
-        BarGroup {
-            id: middleCenterGroup
-            anchors.verticalCenter: parent.verticalCenter
-            padding: workspacesWidget.widgetPadding
+            BarGroup {
+                id: leftCenterGroup
+                anchors.verticalCenter: parent.verticalCenter
+                implicitWidth: root.centerSideModuleWidth
+                padding: root.useShortenedForm === 2 ? 4 : 5
 
-            Workspaces {
-                id: workspacesWidget
-                Layout.fillHeight: true
-                MouseArea {
-                    // Right-click to toggle overview
-                    anchors.fill: parent
-                    acceptedButtons: Qt.RightButton
+                Resources {
+                    alwaysShowAllResources: root.useShortenedForm === 2
+                    Layout.fillWidth: root.useShortenedForm === 2
+                }
 
-                    onPressed: event => {
-                        if (event.button === Qt.RightButton) {
-                            GlobalStates.overviewOpen = !GlobalStates.overviewOpen;
+                Media {
+                    visible: root.useShortenedForm < 2
+                    Layout.fillWidth: true
+                }
+            }
+
+            VerticalBarSeparator {
+                visible: Config.options?.bar.borderless
+            }
+
+            BarGroup {
+                id: middleCenterGroup
+                anchors.verticalCenter: parent.verticalCenter
+                padding: workspacesWidget.widgetPadding
+
+                Workspaces {
+                    id: workspacesWidget
+                    Layout.fillHeight: true
+                    MouseArea {
+                        // Right-click to toggle overview
+                        anchors.fill: parent
+                        acceptedButtons: Qt.RightButton
+
+                        onPressed: event => {
+                            if (event.button === Qt.RightButton) {
+                                GlobalStates.overviewOpen = !GlobalStates.overviewOpen;
+                            }
                         }
                     }
                 }
             }
-        }
 
-        VerticalBarSeparator {
-            visible: Config.options?.bar.borderless
-        }
-
-        OrbitbarButton {
-            anchors.verticalCenter: parent.verticalCenter
-            visible: true
-        }
-
-        VerticalBarSeparator {
-            visible: Config.options?.bar.borderless
-        }
-
-        MouseArea {
-            id: rightCenterGroup
-            anchors.verticalCenter: parent.verticalCenter
-            implicitWidth: root.centerSideModuleWidth
-            implicitHeight: rightCenterGroupContent.implicitHeight
-
-            onPressed: {
-                GlobalStates.sidebarRightOpen = !GlobalStates.sidebarRightOpen;
+            VerticalBarSeparator {
+                visible: Config.options?.bar.borderless
             }
 
-            BarGroup {
-                id: rightCenterGroupContent
-                anchors.fill: parent
+            OrbitbarButton {
+                anchors.verticalCenter: parent.verticalCenter
+                visible: true
+            }
 
-                ClockWidget {
-                    showDate: (Config.options.bar.verbose && root.useShortenedForm < 2)
-                    Layout.alignment: Qt.AlignVCenter
-                    Layout.fillWidth: true
+            VerticalBarSeparator {
+                visible: Config.options?.bar.borderless
+            }
+
+            MouseArea {
+                id: rightCenterGroup
+                anchors.verticalCenter: parent.verticalCenter
+                implicitWidth: root.centerSideModuleWidth
+                implicitHeight: rightCenterGroupContent.implicitHeight
+
+                onPressed: {
+                    GlobalStates.sidebarRightOpen = !GlobalStates.sidebarRightOpen;
                 }
 
-                UtilButtons {
-                    visible: (Config.options.bar.verbose && root.useShortenedForm === 0)
-                    Layout.alignment: Qt.AlignVCenter
-                }
+                BarGroup {
+                    id: rightCenterGroupContent
+                    anchors.fill: parent
+                    padding: root.useShortenedForm === 2 ? 4 : 5
 
-                BatteryIndicator {
-                    visible: (root.useShortenedForm < 2 && Battery.available)
-                    Layout.alignment: Qt.AlignVCenter
+                    ClockWidget {
+                        showDate: (Config.options.bar.verbose && root.useShortenedForm < 2)
+                        Layout.alignment: Qt.AlignVCenter
+                        Layout.fillWidth: true
+                    }
+
+                    UtilButtons {
+                        visible: (Config.options.bar.verbose && root.useShortenedForm === 0)
+                        Layout.alignment: Qt.AlignVCenter
+                    }
+
+                    BatteryIndicator {
+                        visible: (root.useShortenedForm < 2 && Battery.available)
+                        Layout.alignment: Qt.AlignVCenter
+                    }
                 }
             }
         }
@@ -202,7 +221,7 @@ Item { // Bar content region
         anchors {
             top: parent.top
             bottom: parent.bottom
-            left: middleSection.right
+            left: middleSectionWrapper.right
             right: parent.right
         }
         implicitWidth: rightSectionRowLayout.implicitWidth

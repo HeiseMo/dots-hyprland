@@ -28,6 +28,21 @@ def compact_text(value: str, limit: int = 80) -> str:
     return text[: limit - 1].rstrip() + "…"
 
 
+def format_token_count(value: Any) -> str:
+    try:
+        tokens = int(value or 0)
+    except (TypeError, ValueError):
+        return ""
+
+    if tokens <= 0:
+        return ""
+    if tokens >= 1_000_000:
+        return f"{tokens / 1_000_000:.1f}M tok"
+    if tokens >= 1_000:
+        return f"{tokens / 1_000:.1f}k tok"
+    return f"{tokens} tok"
+
+
 @dataclass
 class SessionState:
     session_id: str
@@ -582,6 +597,10 @@ class OrbitbarBridge:
                 "preview": preview,
                 "provider": external_meta.get("provider"),
                 "provider_session_id": provider_session_id,
+                "tokens_used": external_meta.get("tokens_used"),
+                "token_usage_label": external_meta.get("token_usage_label"),
+                "token_usage_detail": external_meta.get("token_usage_detail"),
+                "model": external_meta.get("model"),
                 "age": external_meta.get("age"),
                 "activity_timestamp": external_meta.get("activity_timestamp"),
                 "updated_at": now_iso(),
@@ -1176,6 +1195,10 @@ class OrbitbarBridge:
             "last_tool_call": activity.get("last_tool_call"),
             "change_summary": activity.get("change_summary"),
             "activity_timestamp": int(activity.get("activity_timestamp") or thread.get("updated_at") or 0),
+            "tokens_used": int(thread.get("tokens_used") or 0),
+            "token_usage_label": format_token_count(thread.get("tokens_used")),
+            "token_usage_detail": f"{int(thread.get('tokens_used') or 0):,} tokens used" if int(thread.get("tokens_used") or 0) > 0 else "",
+            "model": str(thread.get("model") or ""),
         }
 
     def find_codex_thread(self, cwd: str, *, thread_id_hint: str = "") -> dict[str, Any] | None:
@@ -1187,6 +1210,7 @@ class OrbitbarBridge:
                 self.codex_state_db_path,
                 """
                     select id, title, cwd, approval_mode, updated_at
+                    , tokens_used, model
                     from threads
                     where id = ?
                     limit 1
@@ -1202,6 +1226,7 @@ class OrbitbarBridge:
         resolved_cwd = str(Path(cwd).resolve())
         query = """
             select id, title, cwd, approval_mode, updated_at
+            , tokens_used, model
             from threads
             where cwd = ?
             order by updated_at desc
@@ -1213,6 +1238,7 @@ class OrbitbarBridge:
 
         fallback_query = """
             select id, title, cwd, approval_mode, updated_at
+            , tokens_used, model
             from threads
             order by updated_at desc
             limit 8
@@ -1238,6 +1264,7 @@ class OrbitbarBridge:
             self.codex_state_db_path,
             """
                 select id, title, cwd, approval_mode, updated_at
+                , tokens_used, model
                 from threads
                 where cwd = ?
                 order by updated_at asc
@@ -1253,6 +1280,7 @@ class OrbitbarBridge:
             self.codex_state_db_path,
             """
                 select id, title, cwd, approval_mode, updated_at
+                , tokens_used, model
                 from threads
                 order by updated_at desc
                 limit 24
@@ -1303,6 +1331,10 @@ class OrbitbarBridge:
             "last_tool_call": None,
             "change_summary": None,
             "activity_timestamp": self.iso_to_epoch(str(latest.get("updated_at") or "")),
+            "tokens_used": 0,
+            "token_usage_label": "",
+            "token_usage_detail": "",
+            "model": "",
         }
 
     def read_codex_thread_activity(self, thread_id: str) -> dict[str, Any]:

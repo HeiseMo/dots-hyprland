@@ -30,6 +30,9 @@ LazyLoader {
     readonly property var workingSessions: sessions.filter(session => (session?.ui_state ?? "idle") === "working")
     readonly property var doneSessions: sessions.filter(session => (session?.ui_state ?? "idle") === "done")
     readonly property var idleSessions: sessions.filter(session => (session?.ui_state ?? "idle") === "idle")
+    readonly property var idleAndDoneSessions: idleSessions.concat(doneSessions)
+    readonly property int urgentCount: needsInputSessions.length + errorSessions.length
+    readonly property int quietCount: idleAndDoneSessions.length
     readonly property string overviewText: {
         const parts = [];
         if (needsInputSessions.length > 0)
@@ -57,6 +60,46 @@ LazyLoader {
     readonly property bool selectedHasRecent: (selectedSession?.recent ?? []).length > 0
     readonly property bool selectedHasChangeSummary: (selectedPendingAction?.change_summary?.file_count ?? 0) > 0
     readonly property bool selectedNeedsInput: !!selectedPendingAction || selectedHasChoices || (selectedSession?.requires_action ?? false)
+    readonly property color selectedStatusColor: root.statusColorFor(root.selectedSession?.ui_state ?? root.selectedSession?.status ?? "idle")
+    readonly property var summaryChips: {
+        const chips = [];
+        if (root.needsInputSessions.length > 0) {
+            chips.push({
+                label: root.needsInputSessions.length === 1 ? "1 needs input" : `${root.needsInputSessions.length} need input`,
+                background: Appearance.colors.colSecondaryContainer,
+                foreground: Appearance.colors.colOnSecondaryContainer,
+            });
+        }
+        if (root.errorSessions.length > 0) {
+            chips.push({
+                label: root.errorSessions.length === 1 ? "1 error" : `${root.errorSessions.length} errors`,
+                background: Appearance.colors.colErrorContainer,
+                foreground: Appearance.colors.colOnErrorContainer,
+            });
+        }
+        if (root.workingSessions.length > 0) {
+            chips.push({
+                label: root.workingSessions.length === 1 ? "1 working" : `${root.workingSessions.length} working`,
+                background: Appearance.colors.colPrimaryContainer,
+                foreground: Appearance.colors.colOnPrimaryContainer,
+            });
+        }
+        if (chips.length === 0 && root.sessions.length > 0) {
+            chips.push({
+                label: root.quietCount === 1 ? "1 quiet session" : `${root.quietCount} quiet sessions`,
+                background: Appearance.colors.colLayer1Hover,
+                foreground: Appearance.colors.colOnLayer1,
+            });
+        }
+        if (root.sessions.length > 0) {
+            chips.push({
+                label: root.sessions.length === 1 ? "1 total" : `${root.sessions.length} total`,
+                background: Appearance.colors.colLayer1,
+                foreground: "#ffffff",
+            });
+        }
+        return chips;
+    }
 
     active: hoverTarget && (hoverTarget.containsMouse || forcedOpen)
 
@@ -178,6 +221,65 @@ LazyLoader {
         }
     }
 
+    function sectionDescription(title) {
+        switch (title) {
+        case "Needs input":
+            return "Questions and approvals that need a reply now.";
+        case "Errors":
+            return "Sessions that stopped cleanly enough to report a failure.";
+        case "Working":
+            return "Live threads still making progress in the background.";
+        case "Idle and done":
+            return "Quiet sessions kept around for context and handoff.";
+        default:
+            return "Live agent sessions.";
+        }
+    }
+
+    function sectionColor(title) {
+        switch (title) {
+        case "Needs input":
+            return Appearance.colors.colSecondary;
+        case "Errors":
+            return Appearance.colors.colError;
+        case "Working":
+            return Appearance.colors.colPrimary;
+        case "Idle and done":
+            return Appearance.colors.colTertiary;
+        default:
+            return Appearance.colors.colOutlineVariant;
+        }
+    }
+
+    function sessionSummaryText(session) {
+        const summary = session?.summary ?? session?.detail ?? "";
+        if (summary.length > 0)
+            return summary;
+        switch (session?.ui_state ?? session?.status ?? "idle") {
+        case "needs_input":
+            return "This thread is waiting on a decision or reply.";
+        case "error":
+            return "The terminal surfaced an error and is waiting for inspection.";
+        case "working":
+            return "The agent is still running in the linked terminal.";
+        case "done":
+            return "The thread finished and is available for review.";
+        default:
+            return "The thread is quiet but still available.";
+        }
+    }
+
+    function sessionSupportText(session) {
+        const fileCount = session?.pending_action?.change_summary?.file_count ?? 0;
+        if (fileCount > 0)
+            return `${fileCount} file${fileCount === 1 ? "" : "s"} changed`;
+        if ((session?.recent ?? []).length > 0)
+            return `${session.recent[0]}`;
+        if (!!session?.primary_action?.label)
+            return `${session.primary_action.label}`;
+        return session?.age ?? "";
+    }
+
     component ThreadBadge: Rectangle {
         required property string label
 
@@ -194,6 +296,26 @@ LazyLoader {
             text: parent.label
             color: Appearance.colors.colSubtext
             font.pixelSize: Appearance.font.pixelSize.smallest
+        }
+    }
+
+    component SummaryChip: Rectangle {
+        required property string label
+        required property color backgroundColor
+        required property color foregroundColor
+
+        radius: 10
+        color: backgroundColor
+        implicitWidth: chipText.implicitWidth + 14
+        implicitHeight: chipText.implicitHeight + 8
+
+        StyledText {
+            id: chipText
+            anchors.centerIn: parent
+            text: parent.label
+            color: parent.foregroundColor
+            font.pixelSize: Appearance.font.pixelSize.smallest
+            font.weight: Font.Medium
         }
     }
 
@@ -215,6 +337,11 @@ LazyLoader {
         ThreadBadge {
             visible: !parent.thread?.project && !!parent.thread?.terminal_app
             label: `${parent.thread?.terminal_app ?? ""}`
+        }
+
+        ThreadBadge {
+            visible: !!parent.thread?.token_usage_label
+            label: `${parent.thread?.token_usage_label ?? ""}`
         }
 
         StyledText {
@@ -248,8 +375,17 @@ LazyLoader {
     component SectionHeader: Row {
         required property string title
         required property int count
+        readonly property color accentColor: root.sectionColor(title)
 
         spacing: 8
+
+        Rectangle {
+            anchors.verticalCenter: parent.verticalCenter
+            width: 8
+            height: 8
+            radius: 4
+            color: parent.accentColor
+        }
 
         StyledText {
             text: parent.title
@@ -263,66 +399,112 @@ LazyLoader {
             color: Appearance.colors.colSubtext
             font.pixelSize: Appearance.font.pixelSize.smallest
         }
+
+        StyledText {
+            anchors.verticalCenter: parent.verticalCenter
+            text: root.sectionDescription(parent.title)
+            color: Appearance.colors.colSubtext
+            font.pixelSize: Appearance.font.pixelSize.smallest
+            elide: Text.ElideRight
+        }
     }
 
     component SessionCard: RippleButton {
-        required property var thread
+        id: sessionCard
 
-        readonly property color stateColor: root.statusColorFor(thread?.ui_state ?? thread?.status ?? "idle")
-        readonly property string stateLabel: root.uiStateLabel(thread?.ui_state ?? "idle")
-        readonly property string summaryText: `${thread?.summary ?? thread?.detail ?? ""}`
-        readonly property var primaryAction: thread?.primary_action ?? null
+        required property string sessionId
+        required property string sessionTitle
+        required property string sessionSummary
+        required property string uiState
+        required property var primaryAction
+        required property var sessionRef
+
+        readonly property color stateColor: root.statusColorFor(sessionCard.uiState)
+        readonly property string stateLabel: root.uiStateLabel(sessionCard.uiState)
+        readonly property string titleText: {
+            if (sessionCard.sessionTitle.length > 0)
+                return sessionCard.sessionTitle;
+            if (sessionCard.sessionId.length > 0)
+                return sessionCard.sessionId;
+            return "untitled";
+        }
+        readonly property string summaryText: {
+            return sessionCard.sessionSummary.length > 0 ? sessionCard.sessionSummary : root.sessionSummaryText(sessionCard.sessionRef);
+        }
+        readonly property string supportText: root.sessionSupportText(sessionCard.sessionRef)
+        readonly property color cardBaseColor: Qt.rgba(sessionCard.stateColor.r, sessionCard.stateColor.g, sessionCard.stateColor.b, 0.11)
+        readonly property color cardHoverColor: Qt.rgba(sessionCard.stateColor.r, sessionCard.stateColor.g, sessionCard.stateColor.b, 0.18)
 
         implicitWidth: parent.width
-        implicitHeight: cardBody.childrenRect.height + 20
-        buttonRadius: 14
-        colBackground: Qt.rgba(Appearance.colors.colLayer1.r, Appearance.colors.colLayer1.g, Appearance.colors.colLayer1.b, 0.72)
+        implicitHeight: cardBody.childrenRect.height + 22
+        buttonRadius: 15
+        colBackground: Qt.rgba(Appearance.colors.colSurfaceContainer.r, Appearance.colors.colSurfaceContainer.g, Appearance.colors.colSurfaceContainer.b, 0.92)
         colBackgroundHover: Appearance.colors.colSurfaceContainerHighest
         colBackgroundToggled: colBackground
         colBackgroundToggledHover: colBackgroundHover
-        colRipple: Appearance.colors.colSurfaceContainerHighestActive
+        colRipple: sessionCard.cardHoverColor
         colRippleToggled: colRipple
-        releaseAction: () => root.openThread(thread?.session_id ?? "")
+        releaseAction: () => root.openThread(sessionCard.sessionId)
 
         contentItem: Column {
             id: cardBody
             anchors.fill: parent
-            anchors.margins: 10
-            spacing: 8
+            anchors.margins: 11
+            spacing: 9
 
             Row {
                 width: parent.width
                 spacing: 8
 
                 Rectangle {
-                    y: 5
-                    width: 8
-                    height: 8
-                    radius: 4
-                    color: stateColor
+                    width: 10
+                    height: parent.height
+                    radius: 5
+                    color: sessionCard.cardBaseColor
+
+                    Rectangle {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        anchors.top: parent.top
+                        anchors.topMargin: 3
+                        width: 4
+                        height: 18
+                        radius: 2
+                        color: sessionCard.stateColor
+                    }
                 }
 
-                StyledText {
-                    width: metaRow.visible ? parent.width - metaRow.width - 18 : parent.width - 18
-                    text: `${thread?.title ?? thread?.session_id ?? "untitled"}`
-                    color: "#ffffff"
-                    font.pixelSize: Appearance.font.pixelSize.small
-                    font.weight: Font.Medium
-                    elide: Text.ElideRight
-                    maximumLineCount: 1
+                Column {
+                    width: parent.width - statusPill.implicitWidth - 18
+                    spacing: 5
+
+                    StyledText {
+                        width: parent.width
+                        text: sessionCard.titleText
+                        color: "#ffffff"
+                        font.pixelSize: Appearance.font.pixelSize.small
+                        font.weight: Font.DemiBold
+                        elide: Text.ElideRight
+                        maximumLineCount: 1
+                    }
+
+                    SessionMetaRow {
+                        visible: implicitWidth > 0
+                        thread: sessionCard.sessionRef
+                    }
                 }
 
-                SessionMetaRow {
-                    id: metaRow
-                    visible: implicitWidth > 0
-                    thread: thread
+                ActionPill {
+                    id: statusPill
+                    anchors.verticalCenter: parent.verticalCenter
+                    label: sessionCard.stateLabel
+                    emphasized: sessionCard.uiState === "needs_input" || sessionCard.uiState === "working"
                 }
             }
 
             StyledText {
                 width: parent.width
-                text: summaryText
-                color: "#d3d6de"
+                text: sessionCard.summaryText
+                color: "#e0e2ea"
                 font.pixelSize: Appearance.font.pixelSize.smallest
                 wrapMode: Text.Wrap
                 maximumLineCount: 2
@@ -330,20 +512,38 @@ LazyLoader {
             }
 
             Row {
+                width: parent.width
                 spacing: 8
 
                 ActionPill {
-                    label: stateLabel
-                    emphasized: thread?.ui_state === "needs_input"
+                    visible: !!sessionCard.primaryAction?.label
+                    label: `${sessionCard.primaryAction?.label ?? ""}`
+                    emphasized: true
                 }
 
-                ActionPill {
-                    visible: !!primaryAction?.label
-                    label: `${primaryAction?.label ?? ""}`
-                    emphasized: true
+                StyledText {
+                    visible: text.length > 0
+                    width: parent.width - (sessionCard.primaryAction?.label ? 144 : 0)
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: sessionCard.supportText
+                    color: Appearance.colors.colSubtext
+                    font.pixelSize: Appearance.font.pixelSize.smallest
+                    elide: Text.ElideRight
+                    maximumLineCount: 1
                 }
             }
         }
+    }
+
+    component SessionCardDelegate: SessionCard {
+        required property var modelData
+
+        sessionId: modelData?.session_id ?? ""
+        sessionTitle: modelData?.title ?? ""
+        sessionSummary: modelData?.summary ?? modelData?.detail ?? ""
+        uiState: modelData?.ui_state ?? modelData?.status ?? "idle"
+        primaryAction: modelData?.primary_action ?? null
+        sessionRef: modelData ?? null
     }
 
     component DetailCard: Rectangle {
@@ -351,7 +551,7 @@ LazyLoader {
         radius: 16
         color: Appearance.colors.colSurfaceContainer
         border.width: 1
-        border.color: Qt.rgba(root.statusColorFor(root.selectedSession?.ui_state ?? root.selectedSession?.status ?? "idle").r, root.statusColorFor(root.selectedSession?.ui_state ?? root.selectedSession?.status ?? "idle").g, root.statusColorFor(root.selectedSession?.ui_state ?? root.selectedSession?.status ?? "idle").b, 0.3)
+        border.color: Qt.rgba(root.selectedStatusColor.r, root.selectedStatusColor.g, root.selectedStatusColor.b, 0.32)
         implicitHeight: detailBody.childrenRect.height + 24
 
         Column {
@@ -383,9 +583,44 @@ LazyLoader {
                 wrapMode: Text.Wrap
             }
 
-            ThreadBadge {
-                visible: !!root.selectedPendingAction
-                label: root.pendingActionLabel(root.selectedPendingAction)
+            Flow {
+                width: parent.width
+                spacing: 8
+
+                ActionPill {
+                    label: root.uiStateLabel(root.selectedSession?.ui_state ?? root.selectedSession?.status ?? "idle")
+                    emphasized: root.selectedNeedsInput || (root.selectedSession?.ui_state ?? "idle") === "working"
+                }
+
+                ActionPill {
+                    visible: !!root.selectedSession?.token_usage_detail
+                    label: `${root.selectedSession?.token_usage_detail ?? ""}`
+                }
+
+                ActionPill {
+                    visible: !!root.selectedPendingAction
+                    label: root.pendingActionLabel(root.selectedPendingAction)
+                    emphasized: true
+                }
+
+                RippleButton {
+                    visible: !!root.selectedSession?.window_address
+                    implicitWidth: terminalJumpText.implicitWidth + 18
+                    implicitHeight: terminalJumpText.implicitHeight + 10
+                    buttonRadius: 10
+                    colBackground: Appearance.colors.colLayer1
+                    colBackgroundHover: Appearance.colors.colLayer1Hover
+                    colRipple: Appearance.colors.colLayer1Active
+                    releaseAction: root.focusTerminal
+
+                    contentItem: StyledText {
+                        id: terminalJumpText
+                        anchors.centerIn: parent
+                        text: "Jump to terminal"
+                        color: "#ffffff"
+                        font.pixelSize: Appearance.font.pixelSize.smallest
+                    }
+                }
             }
 
             Rectangle {
@@ -545,7 +780,7 @@ LazyLoader {
                 }
 
                 StyledText {
-                    text: "No action needed"
+                    text: "No action needed right now"
                     color: "#ffffff"
                     font.pixelSize: Appearance.font.pixelSize.small
                 }
@@ -660,102 +895,144 @@ LazyLoader {
                         width: parent.width
                         spacing: 10
 
-                        StyledText {
-                            text: "Orbitbar"
-                            color: Appearance.colors.colOnSurface
-                            font.pixelSize: Appearance.font.pixelSize.large
-                            font.weight: Font.DemiBold
-                        }
-
-                        StyledText {
+                        Rectangle {
                             width: parent.width
-                            text: root.overviewText
-                            color: Appearance.colors.colSubtext
-                            font.pixelSize: Appearance.font.pixelSize.smallest
-                            wrapMode: Text.Wrap
-                        }
+                            radius: 16
+                            color: Appearance.colors.colSurfaceContainer
+                            border.width: 1
+                            border.color: Qt.rgba((root.urgentCount > 0 ? Appearance.colors.colSecondary : Appearance.colors.colOutlineVariant).r, (root.urgentCount > 0 ? Appearance.colors.colSecondary : Appearance.colors.colOutlineVariant).g, (root.urgentCount > 0 ? Appearance.colors.colSecondary : Appearance.colors.colOutlineVariant).b, 0.35)
+                            implicitHeight: heroBody.childrenRect.height + 24
 
-                        Column {
-                            visible: root.approvalFirst && root.needsInputSessions.length > 0
-                            width: parent.width
-                            spacing: 8
+                            Column {
+                                id: heroBody
+                                x: 12
+                                y: 12
+                                width: parent.width - 24
+                                spacing: 8
 
-                            SectionHeader {
-                                title: "Needs input"
-                                count: root.needsInputSessions.length
-                            }
+                                StyledText {
+                                    text: "Orbitbar"
+                                    color: Appearance.colors.colOnSurface
+                                    font.pixelSize: Appearance.font.pixelSize.large
+                                    font.weight: Font.DemiBold
+                                }
 
-                            Repeater {
-                                model: root.needsInputSessions
-                                delegate: SessionCard {
-                                    thread: modelData
+                                StyledText {
+                                    width: parent.width
+                                    text: root.overviewText
+                                    color: Appearance.colors.colSubtext
+                                    font.pixelSize: Appearance.font.pixelSize.smallest
+                                    wrapMode: Text.Wrap
+                                }
+
+                                Flow {
+                                    visible: root.summaryChips.length > 0
+                                    width: parent.width
+                                    spacing: 8
+
+                                    Repeater {
+                                        model: root.summaryChips
+
+                                        delegate: SummaryChip {
+                                            label: modelData.label
+                                            backgroundColor: modelData.background
+                                            foregroundColor: modelData.foreground
+                                        }
+                                    }
+                                }
+
+                                StyledText {
+                                    width: parent.width
+                                    text: root.sessions.length > 0 ? "Open a thread for detail, quick choices, or a direct jump back to the terminal." : "Orbitbar stays quiet until Codex, Gemini, or Claude terminals become active."
+                                    color: Appearance.colors.colSubtext
+                                    font.pixelSize: Appearance.font.pixelSize.smallest
+                                    wrapMode: Text.Wrap
                                 }
                             }
                         }
 
                         Column {
-                            visible: root.approvalFirst && root.errorSessions.length > 0
+                            visible: root.sessions.length > 0
                             width: parent.width
                             spacing: 8
 
-                            SectionHeader {
-                                title: "Errors"
-                                count: root.errorSessions.length
-                            }
+                            Column {
+                                visible: root.approvalFirst && root.needsInputSessions.length > 0
+                                width: parent.width
+                                spacing: 8
 
-                            Repeater {
-                                model: root.errorSessions
-                                delegate: SessionCard {
-                                    thread: modelData
+                                SectionHeader {
+                                    title: "Needs input"
+                                    count: root.needsInputSessions.length
+                                }
+
+                                Repeater {
+                                    model: root.needsInputSessions
+
+                                    delegate: SessionCardDelegate {}
                                 }
                             }
-                        }
 
-                        Column {
-                            visible: root.approvalFirst && root.workingSessions.length > 0
-                            width: parent.width
-                            spacing: 8
+                            Column {
+                                visible: root.approvalFirst && root.errorSessions.length > 0
+                                width: parent.width
+                                spacing: 8
 
-                            SectionHeader {
-                                title: "Working"
-                                count: root.workingSessions.length
-                            }
+                                SectionHeader {
+                                    title: "Errors"
+                                    count: root.errorSessions.length
+                                }
 
-                            Repeater {
-                                model: root.workingSessions
-                                delegate: SessionCard {
-                                    thread: modelData
+                                Repeater {
+                                    model: root.errorSessions
+
+                                    delegate: SessionCardDelegate {}
                                 }
                             }
-                        }
 
-                        Column {
-                            visible: root.approvalFirst && (root.idleSessions.length + root.doneSessions.length) > 0
-                            width: parent.width
-                            spacing: 8
+                            Column {
+                                visible: root.approvalFirst && root.workingSessions.length > 0
+                                width: parent.width
+                                spacing: 8
 
-                            SectionHeader {
-                                title: "Idle and done"
-                                count: root.idleSessions.length + root.doneSessions.length
-                            }
+                                SectionHeader {
+                                    title: "Working"
+                                    count: root.workingSessions.length
+                                }
 
-                            Repeater {
-                                model: root.idleSessions.concat(root.doneSessions)
-                                delegate: SessionCard {
-                                    thread: modelData
+                                Repeater {
+                                    model: root.workingSessions
+
+                                    delegate: SessionCardDelegate {}
                                 }
                             }
-                        }
 
-                        Column {
-                            visible: !root.approvalFirst && root.sessions.length > 0
-                            width: parent.width
-                            spacing: 8
+                            Column {
+                                visible: root.approvalFirst && root.idleAndDoneSessions.length > 0
+                                width: parent.width
+                                spacing: 8
 
-                            Repeater {
-                                model: root.sessions
-                                delegate: SessionCard {
-                                    thread: modelData
+                                SectionHeader {
+                                    title: "Idle and done"
+                                    count: root.idleAndDoneSessions.length
+                                }
+
+                                Repeater {
+                                    model: root.idleAndDoneSessions
+
+                                    delegate: SessionCardDelegate {}
+                                }
+                            }
+
+                            Column {
+                                visible: !root.approvalFirst && root.sessions.length > 0
+                                width: parent.width
+                                spacing: 8
+
+                                Repeater {
+                                    model: root.sessions
+
+                                    delegate: SessionCardDelegate {}
                                 }
                             }
                         }
@@ -774,10 +1051,10 @@ LazyLoader {
                                 x: 12
                                 y: 12
                                 width: parent.width - 24
-                                spacing: 6
+                                spacing: 8
 
                                 StyledText {
-                                    text: "No live agent terminals"
+                                    text: "No live agent terminals yet"
                                     color: "#ffffff"
                                     font.pixelSize: Appearance.font.pixelSize.small
                                     font.weight: Font.Medium
@@ -785,10 +1062,27 @@ LazyLoader {
 
                                 StyledText {
                                     width: parent.width
-                                    text: "Orbitbar appears when Codex, Gemini, or Claude sessions are active and gives you a fast jump point for approvals and follow-up."
+                                    text: "Orbitbar appears when Codex, Gemini, or Claude sessions are active and turns the bar into a jump surface for approvals, errors, and follow-up."
                                     color: Appearance.colors.colSubtext
                                     font.pixelSize: Appearance.font.pixelSize.smallest
                                     wrapMode: Text.Wrap
+                                }
+
+                                Flow {
+                                    width: parent.width
+                                    spacing: 8
+
+                                    SummaryChip {
+                                        label: "Needs input first"
+                                        backgroundColor: Appearance.colors.colSecondaryContainer
+                                        foregroundColor: Appearance.colors.colOnSecondaryContainer
+                                    }
+
+                                    SummaryChip {
+                                        label: "Working stays visible"
+                                        backgroundColor: Appearance.colors.colPrimaryContainer
+                                        foregroundColor: Appearance.colors.colOnPrimaryContainer
+                                    }
                                 }
                             }
                         }
@@ -808,20 +1102,30 @@ LazyLoader {
                         width: parent.width
                         spacing: 10
 
-                        RippleButton {
-                            implicitWidth: 36
-                            implicitHeight: 32
-                            buttonRadius: 10
-                            colBackground: Appearance.colors.colLayer1
-                            colBackgroundHover: Appearance.colors.colLayer1Hover
-                            colRipple: Appearance.colors.colLayer1Active
-                            releaseAction: root.resetView
+                        Row {
+                            spacing: 8
 
-                            contentItem: StyledText {
-                                anchors.centerIn: parent
-                                text: "←"
-                                color: "#ffffff"
-                                font.pixelSize: Appearance.font.pixelSize.small
+                            RippleButton {
+                                implicitWidth: 84
+                                implicitHeight: 32
+                                buttonRadius: 10
+                                colBackground: Appearance.colors.colLayer1
+                                colBackgroundHover: Appearance.colors.colLayer1Hover
+                                colRipple: Appearance.colors.colLayer1Active
+                                releaseAction: root.resetView
+
+                                contentItem: StyledText {
+                                    anchors.centerIn: parent
+                                    text: "← Back"
+                                    color: "#ffffff"
+                                    font.pixelSize: Appearance.font.pixelSize.smallest
+                                }
+                            }
+
+                            SummaryChip {
+                                label: root.uiStateLabel(root.selectedSession?.ui_state ?? root.selectedSession?.status ?? "idle")
+                                backgroundColor: Qt.rgba(root.selectedStatusColor.r, root.selectedStatusColor.g, root.selectedStatusColor.b, 0.18)
+                                foregroundColor: root.selectedStatusColor
                             }
                         }
 
