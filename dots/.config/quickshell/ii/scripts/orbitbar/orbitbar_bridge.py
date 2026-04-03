@@ -655,7 +655,11 @@ class OrbitbarBridge:
 
             tty = str(process.get("tty") or "")
             terminal_pid = live_session.get("terminal_pid")
-            key = (tool_name, terminal_pid if isinstance(terminal_pid, int) else None, "" if isinstance(terminal_pid, int) else tty)
+            codex_thread_id = str(live_session.get("codex_thread_id") or "")
+            if tool_name == "codex" and codex_thread_id:
+                key = (tool_name, int(process.get("pid") or 0), codex_thread_id)
+            else:
+                key = (tool_name, terminal_pid if isinstance(terminal_pid, int) else None, tty)
             existing = selected.get(key)
             if existing is None or self.live_session_priority(live_session) > self.live_session_priority(existing):
                 selected[key] = live_session
