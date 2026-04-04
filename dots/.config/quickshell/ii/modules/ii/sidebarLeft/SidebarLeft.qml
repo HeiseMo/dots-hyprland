@@ -89,11 +89,20 @@ Scope { // Scope
             visible: GlobalStates.sidebarLeftOpen
             
             property bool extend: false
+            property bool agentsOverlayMode: GlobalStates.sidebarLeftTab === 0 && AgentWorkspace.sessionNames.length > 0
             property real sidebarWidth: panelWindow.extend ? Appearance.sizes.sidebarWidthExtended : Appearance.sizes.sidebarWidth
             property var contentParent: sidebarLeftBackground
 
             function hide() {
                 GlobalStates.sidebarLeftOpen = false
+            }
+
+            function syncDismissable() {
+                if (panelWindow.visible && !panelWindow.agentsOverlayMode) {
+                    GlobalFocusGrab.addDismissable(panelWindow);
+                } else {
+                    GlobalFocusGrab.removeDismissable(panelWindow);
+                }
             }
 
             exclusionMode: ExclusionMode.Normal
@@ -115,16 +124,17 @@ Scope { // Scope
             }
 
             onVisibleChanged: {
-                if (visible) {
-                    GlobalFocusGrab.addDismissable(panelWindow);
-                } else {
-                    GlobalFocusGrab.removeDismissable(panelWindow);
-                }
+                panelWindow.syncDismissable();
+            }
+
+            onAgentsOverlayModeChanged: {
+                panelWindow.syncDismissable();
             }
             Connections {
                 target: GlobalFocusGrab
                 function onDismissed() {
-                    panelWindow.hide();
+                    if (!panelWindow.agentsOverlayMode)
+                        panelWindow.hide();
                 }
             }
 
@@ -140,13 +150,19 @@ Scope { // Scope
                 anchors.topMargin: Appearance.sizes.hyprlandGapsOut
                 anchors.leftMargin: Appearance.sizes.hyprlandGapsOut
                 width: panelWindow.sidebarWidth - Appearance.sizes.hyprlandGapsOut - Appearance.sizes.elevationMargin
-                height: parent.height - Appearance.sizes.hyprlandGapsOut * 2
+                height: panelWindow.agentsOverlayMode
+                    ? Math.min(parent.height - Appearance.sizes.hyprlandGapsOut * 2,
+                               Number(root.sidebarContent?.desiredPanelHeight ?? (parent.height - Appearance.sizes.hyprlandGapsOut * 2)))
+                    : parent.height - Appearance.sizes.hyprlandGapsOut * 2
                 color: Appearance.colors.colLayer0
                 border.width: 1
                 border.color: Appearance.colors.colLayer0Border
                 radius: Appearance.rounding.screenRounding - Appearance.sizes.hyprlandGapsOut + 1
 
                 Behavior on width {
+                    animation: Appearance.animation.elementMove.numberAnimation.createObject(this)
+                }
+                Behavior on height {
                     animation: Appearance.animation.elementMove.numberAnimation.createObject(this)
                 }
 
@@ -204,15 +220,25 @@ Scope { // Scope
         target: "sidebarLeft"
 
         function toggle(): void {
-            GlobalStates.sidebarLeftOpen = !GlobalStates.sidebarLeftOpen
+            if (GlobalStates.sidebarLeftOpen && AgentWorkspace.shouldUseOverlayToggle()) {
+                AgentWorkspace.closeAgentsView();
+            } else {
+                GlobalStates.sidebarLeftOpen = !GlobalStates.sidebarLeftOpen;
+            }
         }
 
         function close(): void {
-            GlobalStates.sidebarLeftOpen = false
+            if (AgentWorkspace.shouldUseOverlayToggle())
+                AgentWorkspace.closeAgentsView();
+            else
+                GlobalStates.sidebarLeftOpen = false
         }
 
         function open(): void {
-            GlobalStates.sidebarLeftOpen = true
+            if (GlobalStates.sidebarLeftTab === 0 && AgentWorkspace.sessionNames.length > 0)
+                AgentWorkspace.openAgentsView();
+            else
+                GlobalStates.sidebarLeftOpen = true
         }
     }
 
@@ -221,7 +247,20 @@ Scope { // Scope
         description: "Toggles left sidebar on press"
 
         onPressed: {
-            GlobalStates.sidebarLeftOpen = !GlobalStates.sidebarLeftOpen;
+            if (GlobalStates.sidebarLeftOpen && AgentWorkspace.shouldUseOverlayToggle()) {
+                AgentWorkspace.closeAgentsView();
+            } else {
+                GlobalStates.sidebarLeftOpen = !GlobalStates.sidebarLeftOpen;
+            }
+        }
+    }
+
+    GlobalShortcut {
+        name: "sidebarLeftOpenAgents"
+        description: "Opens left sidebar on the Agents tab"
+
+        onPressed: {
+            AgentWorkspace.openAgentsView();
         }
     }
 
@@ -230,7 +269,10 @@ Scope { // Scope
         description: "Opens left sidebar on press"
 
         onPressed: {
-            GlobalStates.sidebarLeftOpen = true;
+            if (GlobalStates.sidebarLeftTab === 0 && AgentWorkspace.sessionNames.length > 0)
+                AgentWorkspace.openAgentsView();
+            else
+                GlobalStates.sidebarLeftOpen = true;
         }
     }
 
@@ -239,7 +281,10 @@ Scope { // Scope
         description: "Closes left sidebar on press"
 
         onPressed: {
-            GlobalStates.sidebarLeftOpen = false;
+            if (AgentWorkspace.shouldUseOverlayToggle())
+                AgentWorkspace.closeAgentsView();
+            else
+                GlobalStates.sidebarLeftOpen = false;
         }
     }
 

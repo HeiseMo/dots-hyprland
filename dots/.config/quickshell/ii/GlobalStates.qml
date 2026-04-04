@@ -12,6 +12,7 @@ Singleton {
     property bool barOpen: true
     property bool crosshairOpen: false
     property bool sidebarLeftOpen: false
+    property int  sidebarLeftTab: 0   // current left-sidebar tab index (0 = Agents)
     property bool sidebarRightOpen: false
     property bool mediaControlsOpen: false
     property bool osdBrightnessOpen: false

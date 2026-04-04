@@ -78,14 +78,6 @@ ApiStrategy {
         return {};
     }
 
-    function buildStdinMessage(text) {
-        return text;
-    }
-
-    function isTurnComplete(data) {
-        return data?.done === true || data?.type === "result" || data?.type === "final_result";
-    }
-
     function reset() {}
 
     function buildScriptFileSetup(filePath) {

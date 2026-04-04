@@ -1,3 +1,4 @@
+import qs
 import qs.services
 import qs.modules.common
 import qs.modules.common.widgets
@@ -11,6 +12,7 @@ Item {
     id: root
     required property var scopeRoot
     property int sidebarPadding: 10
+    readonly property int compactSidebarPadding: 6
     anchors.fill: parent
     property bool aiChatEnabled: Config.options.policies.ai !== 0
     property bool translatorEnabled: Config.options.sidebar.translator.enable
@@ -18,6 +20,7 @@ Item {
     property bool animeCloset: Config.options.policies.weeb === 2
     // Agents tab is always first; finance index shifts by 1 when Intelligence is also present
     readonly property int financeTabIndex: root.aiChatEnabled ? 2 : 1
+    readonly property bool agentsOverlayActive: GlobalStates.sidebarLeftOpen && GlobalStates.sidebarLeftTab === 0 && AgentWorkspace.sessionNames.length > 0
     property var tabButtonList: [
         {"icon": "smart_toy", "name": Translation.tr("Agents")},
         ...(root.aiChatEnabled ? [{"icon": "neurology", "name": Translation.tr("Intelligence")}] : []),
@@ -26,9 +29,28 @@ Item {
         ...((root.animeEnabled && !root.animeCloset) ? [{"icon": "bookmark_heart", "name": Translation.tr("Anime")}] : [])
     ]
     property int tabCount: swipeView.count
+    readonly property real desiredPanelHeight: {
+        const currentPadding = agentsOverlayActive ? compactSidebarPadding : sidebarPadding;
+        const toolbarHeight = toolbar.visible ? toolbar.implicitHeight : 0;
+        const contentHeight = agentsOverlayActive
+            ? Number(swipeView.currentItem?.desiredPanelHeight ?? 0)
+            : 0;
+        const gapCount = contentHeight > 0 && toolbarHeight > 0 ? 1 : 0;
+        return currentPadding * 2 + toolbarHeight + contentHeight + gapCount * layoutColumn.spacing;
+    }
 
     function focusActiveItem() {
-        swipeView.currentItem.forceActiveFocus()
+        if (swipeView.currentItem)
+            swipeView.currentItem.forceActiveFocus()
+    }
+
+    // Respond to external requests to switch to a specific tab (e.g. sidebarLeftOpenAgents)
+    Connections {
+        target: GlobalStates
+        function onSidebarLeftTabChanged() {
+            if (GlobalStates.sidebarLeftTab !== swipeView.currentIndex)
+                tabBar.setCurrentIndex(GlobalStates.sidebarLeftTab);
+        }
     }
 
     Keys.onPressed: (event) => {
@@ -45,13 +67,15 @@ Item {
     }
 
     ColumnLayout {
+        id: layoutColumn
         anchors {
             fill: parent
-            margins: sidebarPadding
+            margins: root.agentsOverlayActive ? compactSidebarPadding : sidebarPadding
         }
-        spacing: sidebarPadding
+        spacing: root.agentsOverlayActive ? 0 : sidebarPadding
 
         Toolbar {
+            id: toolbar
             visible: tabButtonList.length > 0
             Layout.alignment: Qt.AlignHCenter
             enableShadow: false
@@ -64,10 +88,16 @@ Item {
         }
 
         Rectangle {
+            visible: !root.agentsOverlayActive || Number(swipeView.currentItem?.desiredPanelHeight ?? 0) > 0
             Layout.fillWidth: true
-            Layout.fillHeight: true
+            Layout.fillHeight: !root.agentsOverlayActive
+            Layout.preferredHeight: root.agentsOverlayActive
+                ? Number(swipeView.currentItem?.desiredPanelHeight ?? 0)
+                : -1
             implicitWidth: swipeView.implicitWidth
-            implicitHeight: swipeView.implicitHeight
+            implicitHeight: root.agentsOverlayActive
+                ? Number(swipeView.currentItem?.desiredPanelHeight ?? swipeView.implicitHeight)
+                : swipeView.implicitHeight
             radius: Appearance.rounding.normal
             color: Appearance.colors.colLayer1
 
@@ -76,6 +106,10 @@ Item {
                 anchors.fill: parent
                 spacing: 10
                 currentIndex: tabBar.currentIndex
+
+                onCurrentIndexChanged: {
+                    GlobalStates.sidebarLeftTab = currentIndex;
+                }
 
                 clip: true
                 layer.enabled: true

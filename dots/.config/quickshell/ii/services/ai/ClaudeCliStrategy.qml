@@ -47,17 +47,6 @@ ApiStrategy {
         return "";
     }
 
-    function buildStdinMessage(text) {
-        return JSON.stringify({
-            type: "user",
-            message: { role: "user", content: [{ type: "text", text: text }] }
-        });
-    }
-
-    function isTurnComplete(data) {
-        return data?.type === "result";
-    }
-
     function extractToolCalls(content) {
         if (!Array.isArray(content)) return [];
         return content

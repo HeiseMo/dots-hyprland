@@ -502,13 +502,6 @@ class OrbitbarBridge:
 
         live_sessions = self.deduplicate_live_sessions(live_sessions, processes)
 
-        active_terminal_addresses = {
-            str((session.get("client") or {}).get("address") or "").strip()
-            for session in live_sessions
-        }
-        active_terminal_addresses.discard("")
-        self.restore_orphaned_terminals(active_terminal_addresses, hypr_clients)
-
         gemini_assignments = self.assign_gemini_sessions(
             [session for session in live_sessions if session["tool_name"] == "gemini"],
             gemini_projects,
@@ -525,7 +518,7 @@ class OrbitbarBridge:
             cwd = str(live_session["cwd"])
             project_name = str(live_session["project_name"])
             codex_thread_id = str(live_session.get("codex_thread_id") or "")
-            workspace_name = self.ensure_terminal_in_special(client)
+            workspace_name = str((client.get("workspace", {}) or {}).get("name") or "") if client else None
             title = project_name or (client.get("title", "") if client else "") or f"{tool_name} session"
             external_meta = self.build_tool_external_meta(
                 tool_name=tool_name,
@@ -1570,88 +1563,19 @@ class OrbitbarBridge:
             return 0
 
     def ensure_terminal_in_special(self, client: dict[str, Any] | None) -> str | None:
+        # Routing removed — window placement is now the user's responsibility via keybinds.
         if not client:
             return None
-
-        address = str(client.get("address") or "").strip()
         workspace = client.get("workspace", {}) or {}
-        current_name = str(workspace.get("name") or "")
-        target_name = f"special:{self.special_workspace_name}"
-
-        if not address:
-            return current_name or None
-
-        if current_name != target_name:
-            if current_name:
-                self.managed_terminal_workspaces.setdefault(address, current_name)
-            try:
-                subprocess.run(
-                    [
-                        "hyprctl",
-                        "dispatch",
-                        "movetoworkspacesilent",
-                        f"{target_name},address:{address}",
-                    ],
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                )
-            except Exception:
-                pass
-            return target_name
-
-        return current_name or None
+        return str(workspace.get("name") or "") or None
 
     def restore_orphaned_terminals(
         self,
         active_terminal_addresses: set[str],
         hypr_clients: dict[int, dict[str, Any]],
     ) -> None:
-        if not self.managed_terminal_workspaces:
-            return
-
-        target_name = f"special:{self.special_workspace_name}"
-        clients_by_address = {
-            str(client.get("address") or "").strip(): client
-            for client in hypr_clients.values()
-            if str(client.get("address") or "").strip()
-        }
-
-        for address, original_workspace in list(self.managed_terminal_workspaces.items()):
-            if address in active_terminal_addresses:
-                continue
-
-            client = clients_by_address.get(address)
-            if client is None:
-                self.managed_terminal_workspaces.pop(address, None)
-                continue
-
-            workspace = client.get("workspace", {}) or {}
-            current_name = str(workspace.get("name") or "")
-            if current_name != target_name:
-                self.managed_terminal_workspaces.pop(address, None)
-                continue
-
-            if not original_workspace:
-                self.managed_terminal_workspaces.pop(address, None)
-                continue
-
-            try:
-                subprocess.run(
-                    [
-                        "hyprctl",
-                        "dispatch",
-                        "movetoworkspacesilent",
-                        f"{original_workspace},address:{address}",
-                    ],
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                )
-            except Exception:
-                pass
-            finally:
-                self.managed_terminal_workspaces.pop(address, None)
+        # Routing removed — no-op.
+        self.managed_terminal_workspaces.clear()
 
     @staticmethod
     def get_process_start_ticks(pid: int) -> int:
