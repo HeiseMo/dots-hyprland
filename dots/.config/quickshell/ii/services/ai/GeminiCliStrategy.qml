@@ -97,6 +97,15 @@ ApiStrategy {
         return {};
     }
 
+    function buildStdinMessage(text) {
+        // Gemini one-shot mode; plain text for future persistent mode
+        return text;
+    }
+
+    function isTurnComplete(data) {
+        return data?.type === "result" || data?.done === true;
+    }
+
     function reset() {
         buffer = "";
     }

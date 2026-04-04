@@ -16,8 +16,10 @@ Item {
     property bool translatorEnabled: Config.options.sidebar.translator.enable
     property bool animeEnabled: Config.options.policies.weeb !== 0
     property bool animeCloset: Config.options.policies.weeb === 2
-    readonly property int financeTabIndex: root.aiChatEnabled ? 1 : 0
+    // Agents tab is always first; finance index shifts by 1 when Intelligence is also present
+    readonly property int financeTabIndex: root.aiChatEnabled ? 2 : 1
     property var tabButtonList: [
+        {"icon": "smart_toy", "name": Translation.tr("Agents")},
         ...(root.aiChatEnabled ? [{"icon": "neurology", "name": Translation.tr("Intelligence")}] : []),
         {"icon": "finance", "name": Translation.tr("Finance")},
         ...(root.translatorEnabled ? [{"icon": "translate", "name": Translation.tr("Translator")}] : []),
@@ -86,6 +88,7 @@ Item {
                 }
 
                 contentChildren: [
+                    agents.createObject(),
                     ...(root.aiChatEnabled ? [aiChat.createObject()] : []),
                     finance.createObject(),
                     ...(root.translatorEnabled ? [translator.createObject()] : []),
@@ -95,6 +98,10 @@ Item {
             }
         }
 
+        Component {
+            id: agents
+            Agents {}
+        }
         Component {
             id: aiChat
             AiChat {}

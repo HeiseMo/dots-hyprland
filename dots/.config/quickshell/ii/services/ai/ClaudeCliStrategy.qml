@@ -37,12 +37,43 @@ ApiStrategy {
     function extractContentText(content) {
         if (typeof content === "string")
             return content;
-        if (Array.isArray(content))
-            return content
-                .filter(part => part?.type === "text" || part?.text)
-                .map(part => part.text ?? "")
-                .join("");
+        if (Array.isArray(content)) {
+            return content.map(part => {
+                if (part?.type === "text")     return part.text ?? "";
+                if (part?.type === "thinking") return "<think>" + (part.thinking ?? "") + "</think>";
+                return "";
+            }).join("");
+        }
         return "";
+    }
+
+    function buildStdinMessage(text) {
+        return JSON.stringify({
+            type: "user",
+            message: { role: "user", content: [{ type: "text", text: text }] }
+        });
+    }
+
+    function isTurnComplete(data) {
+        return data?.type === "result";
+    }
+
+    function extractToolCalls(content) {
+        if (!Array.isArray(content)) return [];
+        return content
+            .filter(part => part?.type === "tool_use" && part?.name)
+            .map(part => {
+                const inp = part.input ?? {};
+                const target = inp.file_path ?? inp.command ?? inp.pattern ?? inp.path ?? inp.query ?? inp.url ?? "";
+                return {
+                    id: part.id ?? "",
+                    name: part.name,
+                    target: target,
+                    input: inp,         // full input for expandable detail
+                    output: "",         // filled in from tool_result events
+                    expanded: false,
+                };
+            });
     }
 
     function parseResponseLine(line, message) {
@@ -55,12 +86,50 @@ ApiStrategy {
             const type = data.type || "";
 
             if (type === "assistant") {
-                const text = extractContentText(data.message?.content);
-                appendText(message, text);
-            } else if (type === "message" && data.message?.role === "assistant") {
-                appendText(message, extractContentText(data.message?.content));
+                const content = data.message?.content;
+                // Extract text and thinking blocks
+                const text = extractContentText(content);
+                if (text) appendText(message, text);
+                // Extract tool calls with full input + id
+                const calls = extractToolCalls(content);
+                if (calls.length > 0)
+                    message.toolCalls = [...(message.toolCalls ?? []), ...calls];
+
+            } else if (type === "user") {
+                // Tool results — match by tool_use_id and store stdout/stderr
+                const content = data.message?.content;
+                const toolResult = data.tool_use_result;  // {stdout, stderr, interrupted, isImage}
+                if (Array.isArray(content)) {
+                    for (const part of content) {
+                        if (part?.type !== "tool_result" || !part?.tool_use_id) continue;
+                        const calls = message.toolCalls ?? [];
+                        const idx = calls.findIndex(c => c.id === part.tool_use_id);
+                        if (idx < 0) continue;
+                        // Build output from tool_use_result (richer) or content string fallback
+                        let output = "";
+                        if (toolResult) {
+                            const stdout = (toolResult.stdout ?? "").trim();
+                            const stderr = (toolResult.stderr ?? "").trim();
+                            output = stdout;
+                            if (stderr) output += (output ? "\n[stderr]\n" : "[stderr]\n") + stderr;
+                        } else if (typeof part.content === "string") {
+                            output = part.content;
+                        } else if (Array.isArray(part.content)) {
+                            output = part.content
+                                .filter(p => p?.type === "text")
+                                .map(p => p.text ?? "")
+                                .join("\n");
+                        }
+                        const updated = [...calls];
+                        updated[idx] = Object.assign({}, updated[idx], { output: output });
+                        message.toolCalls = updated;
+                    }
+                }
+
             } else if (type === "result") {
-                appendText(message, data.result ?? "");
+                // Only use result text as fallback if no content came through assistant events
+                if (!message.rawContent || message.rawContent.length === 0)
+                    appendText(message, data.result ?? "");
                 return { finished: true };
             }
         } catch (e) {

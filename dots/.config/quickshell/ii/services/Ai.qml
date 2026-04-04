@@ -550,7 +550,7 @@ Singleton {
                         "printf '{\"type\":\"result\",\"result\":\"**Error**: Claude Code is not installed. Install it with `npm install -g @anthropic-ai/claude-code` and run `claude auth login`.\",\"done\":true}\\n'; " +
                         "exit 0; " +
                     "fi; " +
-                    "exec \"$CLAUDE_BIN\" -p \"$II_CLAUDE_PROMPT\" --model \"$II_CLAUDE_MODEL\" --output-format stream-json --permission-mode \"$II_CLAUDE_PERMISSION_MODE\"",
+                    "exec \"$CLAUDE_BIN\" -p \"$II_CLAUDE_PROMPT\" --model \"$II_CLAUDE_MODEL\" --output-format stream-json --verbose --permission-mode \"$II_CLAUDE_PERMISSION_MODE\"",
                 ];
                 requester.running = true;
                 return;

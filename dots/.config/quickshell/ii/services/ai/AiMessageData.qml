@@ -21,4 +21,5 @@ QtObject {
     property string functionResponse
     property bool functionPending: false
     property bool visibleToUser: true
+    property var toolCalls: []   // [{name, target, output, expanded}] — populated by CLI strategies
 }

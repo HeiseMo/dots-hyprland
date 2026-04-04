@@ -595,59 +595,59 @@ Scope {
                             return -(4 * 26 * t * (1 - t));
                         }
                         readonly property int frameSize: 48
-                        readonly property string spriteBasePath: "/home/ttanurhan/Downloads/PixelDog/Split_Animations"
+                        readonly property string spriteBasePath: Qt.resolvedUrl("../../../assets/desktopPet/pixelDog/Split_Animations")
                         readonly property string directionName: "RightSide"
                         readonly property var animationDefinitions: ({
                             "Idle": {
-                                file: `${spriteBasePath}/Idle (48x48)/${directionName}-Idle-Sheet.png`,
+                                file: `${spriteBasePath}/${directionName}-Idle-Sheet.png`,
                                 frames: [[0, 0], [1, 0], [2, 0], [3, 0], [0, 1], [1, 1], [2, 1], [3, 1], [4, 1], [5, 1], [6, 1], [7, 1]],
                                 interval: 120
                             },
                             "Walk": {
-                                file: `${spriteBasePath}/Walk (48x48)/${directionName}-Walk-Sheet.png`,
+                                file: `${spriteBasePath}/${directionName}-Walk-Sheet.png`,
                                 frames: [[0, 0], [1, 0], [2, 0], [3, 0]],
                                 interval: 95
                             },
                             "Run": {
-                                file: `${spriteBasePath}/Run (48x48)/${directionName}-Run-Sheet.png`,
+                                file: `${spriteBasePath}/${directionName}-Run-Sheet.png`,
                                 frames: [[0, 0], [1, 0], [2, 0], [3, 0], [4, 0], [5, 0], [6, 0], [7, 0]],
                                 interval: 70
                             },
                             "Sniff": {
-                                file: `${spriteBasePath}/Sniff (48x48)/${directionName}-Sniff-Sheet.png`,
+                                file: `${spriteBasePath}/${directionName}-Sniff-Sheet.png`,
                                 frames: [[0, 0], [1, 0], [2, 0], [3, 0]],
                                 interval: 130
                             },
                             "Lick": {
-                                file: `${spriteBasePath}/Lick (48x48)/${directionName}-Lick-Sheet.png`,
+                                file: `${spriteBasePath}/${directionName}-Lick-Sheet.png`,
                                 frames: [[0, 0], [1, 0], [2, 0], [3, 0]],
                                 interval: 90
                             },
                             "Bark": {
-                                file: `${spriteBasePath}/Bark (48x48)/${directionName}-Bark-Sheet.png`,
+                                file: `${spriteBasePath}/${directionName}-Bark-Sheet.png`,
                                 frames: [[0, 0], [1, 0], [2, 0], [3, 0], [4, 0], [5, 0], [6, 0], [7, 0], [0, 1], [1, 1], [2, 1], [3, 1], [4, 1]],
                                 interval: 85
                             },
                             "Sit": {
-                                file: `${spriteBasePath}/Sit (48x48)/${directionName}-Sit-Sheet.png`,
+                                file: `${spriteBasePath}/${directionName}-Sit-Sheet.png`,
                                 frames: [[0, 4], [1, 4], [2, 4], [3, 4], [4, 4], [5, 4], [6, 4], [7, 4], [8, 4], [9, 4], [10, 4], [11, 4], [12, 4], [13, 4], [14, 4]],
                                 interval: 150,
                                 mode: "loop"
                             },
                             "Laydown": {
-                                file: `${spriteBasePath}/Die (48x48)/${directionName}-Die-Sheet.png`,
+                                file: `${spriteBasePath}/${directionName}-Die-Sheet.png`,
                                 frames: [[0, 0], [1, 0], [2, 0]],
                                 interval: 140,
                                 mode: "once"
                             },
                             "Jump": {
-                                file: `${spriteBasePath}/Jump (48x48)/${directionName}-Jump-Sheet.png`,
+                                file: `${spriteBasePath}/${directionName}-Jump-Sheet.png`,
                                 frames: [[0, 0], [1, 0], [2, 0], [0, 1], [1, 1], [2, 1], [3, 1], [0, 2], [1, 2], [2, 2]],
                                 interval: 85,
                                 mode: "once"
                             },
                             "JumpHold": {
-                                file: `${spriteBasePath}/Jump (48x48)/${directionName}-Jump-Sheet.png`,
+                                file: `${spriteBasePath}/${directionName}-Jump-Sheet.png`,
                                 frames: [[2, 0], [0, 1], [1, 1], [2, 1], [3, 1], [2, 1], [1, 1], [0, 1]],
                                 interval: 95,
                                 mode: "loop"

@@ -74,6 +74,15 @@ ApiStrategy {
         return {};
     }
 
+    function buildStdinMessage(text) {
+        // Codex persistent mode accepts plain text lines on stdin
+        return text;
+    }
+
+    function isTurnComplete(data) {
+        return data?.type === "turn.completed";
+    }
+
     function reset() {
         buffer = "";
     }
